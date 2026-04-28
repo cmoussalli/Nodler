@@ -1,0 +1,563 @@
+@using Nodler.Components.Models
+@using System.Text.Json
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<div class="workflow-designer @ThemeClass">
+    <div class="workflow-toolbar">
+        @if (!string.IsNullOrEmpty(PaletteTitle) || ShowThemeToggle)
+        {
+            <div class="toolbar-header">
+                @if (!string.IsNullOrEmpty(PaletteTitle))
+                {
+                    <h3>@PaletteTitle</h3>
+                }
+                @if (ShowThemeToggle)
+                {
+                    <button class="theme-toggle" @onclick="ToggleTheme"
+                            title="@(Theme == "light" ? "Switch to dark mode" : "Switch to light mode")">
+                        @(Theme == "light" ? "Dark" : "Light")
+                    </button>
+                }
+            </div>
+        }
+        <div class="node-palette">
+            @foreach (var nodeType in NodeTypes)
+            {
+                <div class="palette-node @nodeType.CssClass"
+                     style="@BuildPaletteNodeStyle(nodeType)"
+                     draggable="true"
+                     @ondragstart="@(e => OnPaletteDragStart(e, nodeType))"
+                     @ondragend="OnPaletteDragEnd"
+                     title="@(nodeType.Description ?? nodeType.Title)">
+                    @if (PaletteNodeTemplate is not null)
+                    {
+                        @PaletteNodeTemplate(nodeType)
+                    }
+                    else
+                    {
+                        <div class="palette-node-default">
+                            <span class="palette-node-chip"
+                                  style="background-color: @nodeType.Color;@(nodeType.TextColor is null ? "" : $" color: {nodeType.TextColor};")">
+                                @if (!string.IsNullOrEmpty(nodeType.IconUrl))
+                                {
+                                    <img src="@nodeType.IconUrl" class="palette-node-icon-img" alt="" />
+                                }
+                                else if (!string.IsNullOrEmpty(nodeType.Icon))
+                                {
+                                    <span class="palette-node-icon">@nodeType.Icon</span>
+                                }
+                                <span class="palette-node-title">@nodeType.Title</span>
+                                @if (!string.IsNullOrEmpty(nodeType.Badge))
+                                {
+                                    <span class="palette-node-badge">@nodeType.Badge</span>
+                                }
+                            </span>
+                            @if (!string.IsNullOrEmpty(nodeType.Description))
+                            {
+                                <div class="palette-node-description">@nodeType.Description</div>
+                            }
+                            @if (!string.IsNullOrEmpty(nodeType.Category))
+                            {
+                                <div class="palette-node-category">@nodeType.Category</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="workflow-canvas-container" @ref="CanvasRef">
+        <div class="workflow-canvas" 
+             @ondrop="OnDrop"
+             @ondrop:preventDefault
+             @ondragover="OnDragOver"
+             @ondragover:preventDefault
+             @onmousemove="OnMouseMove"
+             @onmouseup="OnMouseUp"
+             @onclick="OnCanvasClick"
+             @ondragenter="OnDragEnter">
+            @foreach (var node in State.Nodes)
+            {
+                <WorkflowNodeComponent
+                    Node="node"
+                    Connections="State.Connections"
+                    OnNodeClick="EventCallback.Factory.Create<WorkflowNode>(this, HandleNodeClick)"
+                    OnConnectorClick="EventCallback.Factory.Create<(string, string)>(this, args => HandleConnectorClick(args.Item1, args.Item2))"
+                    OnNodeDragStart="EventCallback.Factory.Create<(WorkflowNode, MouseEventArgs)>(this, args => OnNodeDragStart(args.Item1, args.Item2))"
+                    OnNodeDrag="EventCallback.Factory.Create<MouseEventArgs>(this, OnNodeDrag)"
+                    OnNodeDragEnd="EventCallback.Factory.Create(this, OnNodeDragEnd)"
+                    IsSelected="State.SelectedNode?.Id == node.Id" />
+            }
+
+            <WorkflowConnection Connections="@State.Connections" Nodes="@State.Nodes"
+                                OnConnectionDoubleClick="HandleConnectionDoubleClick" />
+
+            @if (IsDraggingConnection)
+            {
+                <WorkflowConnectionDrag
+                    SourceNodeId="State.SelectedConnectorNodeId"
+                    SourceConnectorId="State.SelectedConnectorId"
+                    MousePosition="CurrentMousePosition"
+                    Nodes="State.Nodes" />
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .workflow-designer.theme-dark {
+        --nd-bg: #1e1e1e;
+        --nd-panel-bg: #252526;
+        --nd-border: #3e3e42;
+        --nd-text: #ffffff;
+        --nd-text-muted: #9ca3af;
+        --nd-input-bg: #1e1e1e;
+        --nd-palette-bg: #2d2d30;
+        --nd-grid-dot: #3e3e42;
+        --nd-shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    .workflow-designer.theme-light {
+        --nd-bg: #f5f5f5;
+        --nd-panel-bg: #ffffff;
+        --nd-border: #d1d5db;
+        --nd-text: #1f2937;
+        --nd-text-muted: #6b7280;
+        --nd-input-bg: #ffffff;
+        --nd-palette-bg: #f9fafb;
+        --nd-grid-dot: #d1d5db;
+        --nd-shadow: rgba(0, 0, 0, 0.1);
+    }
+
+    .workflow-designer {
+        display: grid;
+        grid-template-columns: 250px 1fr;
+        height: 100%;
+        background-color: var(--nd-bg);
+        color: var(--nd-text);
+        overflow: hidden;
+    }
+
+    .workflow-toolbar {
+        background-color: var(--nd-panel-bg);
+        border-right: 1px solid var(--nd-border);
+        padding: 16px;
+        overflow-y: auto;
+    }
+
+    .workflow-toolbar h3 {
+        margin-top: 0;
+        margin-bottom: 0;
+        font-size: 16px;
+        color: var(--nd-text);
+    }
+
+    .toolbar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+    }
+
+    .theme-toggle {
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 500;
+        background-color: var(--nd-palette-bg);
+        color: var(--nd-text);
+        border: 1px solid var(--nd-border);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+
+    .theme-toggle:hover {
+        border-color: #60a5fa;
+    }
+
+    .node-palette {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .palette-node {
+        padding: 12px 16px;
+        border-radius: 6px;
+        cursor: grab;
+        user-select: none;
+        font-size: 14px;
+        font-weight: 500;
+        transition: transform 0.2s, box-shadow 0.2s;
+        background-color: var(--nd-palette-bg);
+        border: 1px solid var(--nd-border);
+    }
+
+    .palette-node:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px var(--nd-shadow);
+        border-color: #60a5fa;
+    }
+
+    .palette-node-default {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .palette-node-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #ffffff;
+        font-weight: 500;
+    }
+
+    .palette-node-icon {
+        font-size: 14px;
+        line-height: 1;
+    }
+
+    .palette-node-icon-img {
+        width: 14px;
+        height: 14px;
+        object-fit: contain;
+    }
+
+    .palette-node-title {
+        flex: 1 1 auto;
+    }
+
+    .palette-node-badge {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.25);
+    }
+
+    .palette-node-description {
+        font-size: 11px;
+        opacity: 0.75;
+    }
+
+    .palette-node-category {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        opacity: 0.6;
+    }
+
+    .workflow-canvas-container {
+        position: relative;
+        overflow: hidden;
+        background-color: var(--nd-bg);
+        background-image:
+            radial-gradient(circle, var(--nd-grid-dot) 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+
+    .workflow-canvas {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        min-width: 3000px;
+        min-height: 3000px;
+    }
+
+</style>
+
+@code {
+    [Parameter]
+    public WorkflowDesignerState State { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<WorkflowNode> NodeClicked { get; set; }
+
+    [Parameter]
+    public EventCallback<WorkflowNode?> SelectionChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<CanvasChangedEventArgs> CanvasChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<ConnectorClickedEventArgs> ConnectorClicked { get; set; }
+
+    [Parameter]
+    public List<NodeType> NodeTypes { get; set; } = new();
+
+    [Parameter]
+    public string Theme { get; set; } = "dark";
+
+    [Parameter]
+    public EventCallback<string> ThemeChanged { get; set; }
+
+    /// <summary>
+    /// Title shown above the node palette in the left toolbar. Set to <c>null</c> or
+    /// an empty string to hide the title element.
+    /// </summary>
+    [Parameter]
+    public string? PaletteTitle { get; set; } = "Node Types";
+
+    /// <summary>
+    /// Whether to render the built-in light/dark theme toggle button in the toolbar header.
+    /// </summary>
+    [Parameter]
+    public bool ShowThemeToggle { get; set; } = true;
+
+    /// <summary>
+    /// Optional template for rendering the inside of each card in the left node palette.
+    /// When provided, replaces the default chip layout. The outer draggable container is
+    /// still owned by <c>WorkflowDesigner</c>, so drag-and-drop continues to work without
+    /// any wiring in the template.
+    /// </summary>
+    [Parameter]
+    public RenderFragment<NodeType>? PaletteNodeTemplate { get; set; }
+
+    private static string BuildPaletteNodeStyle(NodeType nt)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(nt.BorderColor)) parts.Add($"border-color: {nt.BorderColor}");
+        if (!string.IsNullOrEmpty(nt.Style)) parts.Add(nt.Style);
+        return string.Join("; ", parts);
+    }
+
+    private string ThemeClass => Theme == "light" ? "theme-light" : "theme-dark";
+
+    private async Task ToggleTheme()
+    {
+        Theme = Theme == "light" ? "dark" : "light";
+        await ThemeChanged.InvokeAsync(Theme);
+    }
+
+    private ElementReference CanvasRef;
+    private WorkflowNode? DraggingNode;
+    private (double StartX, double StartY) DragStartMouse;
+    private (double X, double Y) CurrentMousePosition;
+    private NodeType? DraggedNodeType;
+
+    private bool IsDraggingConnection => !string.IsNullOrEmpty(State.SelectedConnectorNodeId) && !string.IsNullOrEmpty(State.SelectedConnectorId);
+
+    private void OnPaletteDragStart(DragEventArgs e, NodeType nodeType)
+    {
+        DraggedNodeType = nodeType;
+    }
+
+    private void OnPaletteDragEnd()
+    {
+        DraggedNodeType = null;
+    }
+
+    private void OnDragOver(DragEventArgs e)
+    {
+        if (DraggedNodeType != null)
+        {
+            e.DataTransfer.EffectAllowed = "copy";
+        }
+    }
+
+    private async Task OnDrop(DragEventArgs e)
+    {
+        var droppedType = DraggedNodeType;
+        DraggedNodeType = null;
+
+        if (droppedType != null)
+        {
+            var jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                "import", "./_content/Nodler.Components/WorkflowDesigner.razor.js");
+            var rect = await jsModule.InvokeAsync<BoundingRect>("getBoundingClientRect", CanvasRef);
+
+            var node = new WorkflowNode
+            {
+                Title = droppedType.Title,
+                Type = droppedType.Type,
+                BackgroundColor = droppedType.Color,
+                X = e.ClientX - rect.X - 100,
+                Y = e.ClientY - rect.Y - 50,
+                Connectors = droppedType.Connectors.Select(c => new NodeConnector
+                {
+                    Label = c.Label,
+                    Type = c.Type,
+                    DataType = c.DataType,
+                    MaxConnections = c.MaxConnections
+                }).ToList()
+            };
+
+            State.Nodes.Add(node);
+            await CanvasChanged.InvokeAsync(new CanvasChangedEventArgs
+            {
+                ChangeType = CanvasChangeType.NodeAdded,
+                Node = node
+            });
+            StateHasChanged();
+        }
+    }
+
+    private record BoundingRect(double X, double Y, double Width, double Height);
+
+    private void OnDragEnter(DragEventArgs e)
+    {
+    }
+
+    private void OnMouseMove(MouseEventArgs e)
+    {
+        CurrentMousePosition = (e.ClientX, e.ClientY);
+        
+        if (DraggingNode != null)
+        {
+            var deltaX = e.ClientX - DragStartMouse.StartX;
+            var deltaY = e.ClientY - DragStartMouse.StartY;
+            
+            DraggingNode.X += deltaX;
+            DraggingNode.Y += deltaY;
+            
+            DragStartMouse = (e.ClientX, e.ClientY);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCanvasClick()
+    {
+        var hadSelection = State.SelectedNode != null;
+        State.SelectedNode = null;
+        State.SelectedConnectorNodeId = null;
+        State.SelectedConnectorId = null;
+        if (hadSelection)
+        {
+            await SelectionChanged.InvokeAsync(null);
+        }
+        StateHasChanged();
+    }
+
+    private void OnNodeDragStart(WorkflowNode node, MouseEventArgs e)
+    {
+        DraggingNode = node;
+        DragStartMouse = (e.ClientX, e.ClientY);
+    }
+
+    private void OnNodeDrag(MouseEventArgs e)
+    {
+    }
+
+    private async Task OnMouseUp(MouseEventArgs e)
+    {
+        if (DraggingNode != null)
+        {
+            await CanvasChanged.InvokeAsync(new CanvasChangedEventArgs
+            {
+                ChangeType = CanvasChangeType.NodeMoved,
+                Node = DraggingNode
+            });
+        }
+        DraggingNode = null;
+    }
+
+    private void OnNodeDragEnd()
+    {
+        DraggingNode = null;
+    }
+
+    private async Task HandleNodeClick(WorkflowNode node)
+    {
+        var changed = !ReferenceEquals(State.SelectedNode, node);
+        State.SelectedNode = node;
+        await NodeClicked.InvokeAsync(node);
+        if (changed)
+        {
+            await SelectionChanged.InvokeAsync(node);
+        }
+        StateHasChanged();
+    }
+
+    private async Task HandleConnectorClick(string nodeId, string connectorId)
+    {
+        var clickedNode = State.Nodes.FirstOrDefault(n => n.Id == nodeId);
+        var clickedConnector = clickedNode?.Connectors.FirstOrDefault(c => c.Id == connectorId);
+        if (clickedNode != null && clickedConnector != null)
+        {
+            await ConnectorClicked.InvokeAsync(new ConnectorClickedEventArgs
+            {
+                Node = clickedNode,
+                Connector = clickedConnector
+            });
+        }
+
+        if (string.IsNullOrEmpty(State.SelectedConnectorNodeId))
+        {
+            if (clickedNode != null && clickedConnector != null &&
+                IsConnectorAtCapacity(clickedNode.Id, clickedConnector))
+            {
+                return;
+            }
+
+            State.SelectedConnectorNodeId = nodeId;
+            State.SelectedConnectorId = connectorId;
+        }
+        else
+        {
+            var sourceNode = State.Nodes.FirstOrDefault(n => n.Id == State.SelectedConnectorNodeId);
+            var targetNode = State.Nodes.FirstOrDefault(n => n.Id == nodeId);
+
+            if (sourceNode != null && targetNode != null && sourceNode.Id != targetNode.Id)
+            {
+                var sourceConnector = sourceNode.Connectors.FirstOrDefault(c => c.Id == State.SelectedConnectorId);
+                var targetConnector = targetNode.Connectors.FirstOrDefault(c => c.Id == connectorId);
+
+                if (sourceConnector != null && targetConnector != null &&
+                    sourceConnector.Type == ConnectorType.Output &&
+                    targetConnector.Type == ConnectorType.Input &&
+                    !IsConnectorAtCapacity(sourceNode.Id, sourceConnector) &&
+                    !IsConnectorAtCapacity(targetNode.Id, targetConnector))
+                {
+                    var connection = new Connection
+                    {
+                        SourceNodeId = State.SelectedConnectorNodeId!,
+                        SourceConnectorId = State.SelectedConnectorId!,
+                        TargetNodeId = nodeId,
+                        TargetConnectorId = connectorId
+                    };
+                    State.Connections.Add(connection);
+                    await CanvasChanged.InvokeAsync(new CanvasChangedEventArgs
+                    {
+                        ChangeType = CanvasChangeType.ConnectionAdded,
+                        Connection = connection
+                    });
+                }
+            }
+
+            State.SelectedConnectorNodeId = null;
+            State.SelectedConnectorId = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task HandleConnectionDoubleClick(Connection connection)
+    {
+        State.Connections.Remove(connection);
+        await CanvasChanged.InvokeAsync(new CanvasChangedEventArgs
+        {
+            ChangeType = CanvasChangeType.ConnectionDeleted,
+            Connection = connection
+        });
+        StateHasChanged();
+    }
+
+    private bool IsConnectorAtCapacity(string nodeId, NodeConnector connector)
+    {
+        if (connector.MaxConnections <= 0)
+        {
+            return false;
+        }
+
+        var count = connector.Type == ConnectorType.Output
+            ? State.Connections.Count(c => c.SourceNodeId == nodeId && c.SourceConnectorId == connector.Id)
+            : State.Connections.Count(c => c.TargetNodeId == nodeId && c.TargetConnectorId == connector.Id);
+
+        return count >= connector.MaxConnections;
+    }
+
+}

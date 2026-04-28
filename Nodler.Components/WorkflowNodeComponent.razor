@@ -1,0 +1,260 @@
+@using Nodler.Components.Models
+
+<div class="workflow-node @SelectedClass"
+     style="left: @(Node.X)px; top: @(Node.Y)px; width: @(Node.Width)px; height: @(Node.Height)px; background-color: @Node.BackgroundColor; border-color: @Node.BorderColor"
+     @onmousedown="OnMouseDown"
+     @onclick="HandleNodeClick"
+     @onclick:stopPropagation>
+    @if (!string.IsNullOrWhiteSpace(Node.Template))
+    {
+        <div class="node-custom-template">
+            @((MarkupString)RenderTemplate(Node))
+        </div>
+    }
+    else
+    {
+        <div class="node-header">@Node.Title</div>
+        <div class="node-content-default">
+            @Node.Type
+        </div>
+    }
+
+    <div class="node-connectors">
+        @foreach (var connector in Node.Connectors.Where(c => c.Type == ConnectorType.Input))
+        {
+            var isFull = IsConnectorAtCapacity(connector);
+            <div class="connector connector-input @(isFull ? "connector-full" : string.Empty)"
+                 title="@(isFull ? $"Max {connector.MaxConnections} connection(s) reached" : connector.Label)"
+                 @onclick="@(() => HandleConnectorClick(Node.Id, connector.Id))"
+                 @onclick:stopPropagation
+                 @onmousedown:stopPropagation>
+                <span class="connector-label">@connector.Label</span>
+                <div class="connector-dot"></div>
+            </div>
+        }
+    </div>
+
+    <div class="node-connectors">
+        @foreach (var connector in Node.Connectors.Where(c => c.Type == ConnectorType.Output))
+        {
+            var isFull = IsConnectorAtCapacity(connector);
+            <div class="connector connector-output @(isFull ? "connector-full" : string.Empty)"
+                 title="@(isFull ? $"Max {connector.MaxConnections} connection(s) reached" : connector.Label)"
+                 @onclick="@(() => HandleConnectorClick(Node.Id, connector.Id))"
+                 @onclick:stopPropagation
+                 @onmousedown:stopPropagation>
+                <div class="connector-dot"></div>
+                <span class="connector-label">@connector.Label</span>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .workflow-node {
+        position: absolute;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        cursor: move;
+        user-select: none;
+        display: flex;
+        flex-direction: column;
+        padding: 8px;
+        border: 2px solid transparent;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        min-height: 80px;
+    }
+
+    .workflow-node:hover {
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .workflow-node.selected {
+        border-color: #ffffff;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+    }
+
+    .node-header {
+        font-weight: 600;
+        font-size: 14px;
+        color: #ffffff;
+        text-align: center;
+        margin-bottom: 8px;
+        padding: 4px 8px;
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 4px;
+    }
+
+    .node-content-default {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.8);
+        padding: 8px;
+    }
+
+    .node-custom-template {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        font-size: 12px;
+        color: #ffffff;
+        padding: 4px;
+        overflow: hidden;
+    }
+
+    .node-connectors {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .node-connectors:first-child {
+        left: -16px;
+    }
+
+    .node-connectors:last-child {
+        right: -16px;
+    }
+
+    .connector {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+
+    .connector:hover {
+        transform: scale(1.1);
+    }
+
+    .connector-input {
+        flex-direction: row;
+    }
+
+    .connector-output {
+        flex-direction: row-reverse;
+    }
+
+    .connector-label {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 2px 4px;
+        border-radius: 3px;
+    }
+
+    .connector-input .connector-label {
+        margin-left: -8px;
+    }
+
+    .connector-output .connector-label {
+        margin-right: -8px;
+    }
+
+    .connector-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #ffffff;
+        border: 2px solid rgba(0, 0, 0, 0.3);
+        transition: background-color 0.2s;
+    }
+
+    .connector:hover .connector-dot {
+        background-color: #fbbf24;
+    }
+
+    .connector-full {
+        cursor: not-allowed;
+        opacity: 0.55;
+    }
+
+    .connector-full:hover {
+        transform: none;
+    }
+
+    .connector-full .connector-dot {
+        background-color: #6b7280;
+        border-color: rgba(0, 0, 0, 0.5);
+    }
+
+    .connector-full:hover .connector-dot {
+        background-color: #6b7280;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public WorkflowNode Node { get; set; } = new();
+
+    [Parameter]
+    public List<Connection> Connections { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<WorkflowNode> OnNodeClick { get; set; }
+
+    [Parameter]
+    public EventCallback<(string NodeId, string ConnectorId)> OnConnectorClick { get; set; }
+
+    [Parameter]
+    public EventCallback<(WorkflowNode Node, MouseEventArgs Event)> OnNodeDragStart { get; set; }
+
+    [Parameter]
+    public EventCallback<MouseEventArgs> OnNodeDrag { get; set; }
+
+    [Parameter]
+    public EventCallback OnNodeDragEnd { get; set; }
+
+    [Parameter]
+    public bool IsSelected { get; set; }
+
+     private string SelectedClass => IsSelected ? "selected" : string.Empty;
+
+     private async Task OnMouseDown(MouseEventArgs e)
+     {
+         await OnNodeDragStart.InvokeAsync((Node, e));
+     }
+
+     private async Task HandleNodeClick()
+     {
+         await OnNodeClick.InvokeAsync(Node);
+     }
+
+     private async Task HandleConnectorClick(string nodeId, string connectorId)
+     {
+         await OnConnectorClick.InvokeAsync((nodeId, connectorId));
+     }
+
+     private static string RenderTemplate(WorkflowNode node)
+     {
+         var template = node.Template ?? string.Empty;
+         return template
+             .Replace("{{Title}}", node.Title)
+             .Replace("{{Type}}", node.Type)
+             .Replace("{{Id}}", node.Id)
+             .Replace("{{BackgroundColor}}", node.BackgroundColor)
+             .Replace("{{BorderColor}}", node.BorderColor);
+     }
+
+     private bool IsConnectorAtCapacity(NodeConnector connector)
+     {
+         if (connector.MaxConnections <= 0)
+         {
+             return false;
+         }
+
+         var count = connector.Type == ConnectorType.Output
+             ? Connections.Count(c => c.SourceNodeId == Node.Id && c.SourceConnectorId == connector.Id)
+             : Connections.Count(c => c.TargetNodeId == Node.Id && c.TargetConnectorId == connector.Id);
+
+         return count >= connector.MaxConnections;
+     }
+ }

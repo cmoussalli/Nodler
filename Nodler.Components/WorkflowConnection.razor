@@ -1,0 +1,92 @@
+@using Nodler.Components.Models
+
+<svg class="workflow-connections" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+    @foreach (var connection in Connections)
+    {
+        var sourceNode = Nodes.FirstOrDefault(n => n.Id == connection.SourceNodeId);
+        var targetNode = Nodes.FirstOrDefault(n => n.Id == connection.TargetNodeId);
+
+        if (sourceNode != null && targetNode != null)
+        {
+            var sourceConnector = sourceNode.Connectors.FirstOrDefault(c => c.Id == connection.SourceConnectorId);
+            var targetConnector = targetNode.Connectors.FirstOrDefault(c => c.Id == connection.TargetConnectorId);
+
+            if (sourceConnector != null && targetConnector != null)
+            {
+                var startPoint = GetConnectorPosition(sourceNode, sourceConnector);
+                var endPoint = GetConnectorPosition(targetNode, targetConnector);
+                var pathData = GetBezierPath(startPoint, endPoint);
+
+                <path d="@pathData"
+                      stroke="#60a5fa"
+                      stroke-width="2"
+                      fill="none"
+                      stroke-linecap="round"
+                      style="pointer-events: auto; cursor: pointer;"
+                      @onclick="@(e => HandleConnectionClick(connection))"
+                      @ondblclick="@(e => HandleConnectionDoubleClick(connection))" />
+            }
+        }
+    }
+</svg>
+
+@code {
+    [Parameter]
+    public List<Connection> Connections { get; set; } = new();
+
+    [Parameter]
+    public List<WorkflowNode> Nodes { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<Connection> OnConnectionClick { get; set; }
+
+    [Parameter]
+    public EventCallback<Connection> OnConnectionDoubleClick { get; set; }
+
+    private void HandleConnectionClick(Connection connection)
+    {
+        OnConnectionClick.InvokeAsync(connection);
+    }
+
+    private void HandleConnectionDoubleClick(Connection connection)
+    {
+        OnConnectionDoubleClick.InvokeAsync(connection);
+    }
+
+    private (double X, double Y) GetConnectorPosition(WorkflowNode node, NodeConnector connector)
+    {
+        var connectorIndex = node.Connectors.IndexOf(connector);
+        var totalConnectors = node.Connectors.Count(c => c.Type == connector.Type);
+        var typeConnectors = node.Connectors.Where(c => c.Type == connector.Type).ToList();
+        var typeIndex = typeConnectors.IndexOf(connector);
+
+        var y = node.Y + (node.Height / 2);
+
+        if (connector.Type == ConnectorType.Input)
+        {
+            var x = node.X;
+            if (totalConnectors > 1)
+            {
+                y = node.Y + ((typeIndex + 1) * (node.Height / (totalConnectors + 1)));
+            }
+            return (x, y);
+        }
+        else
+        {
+            var x = node.X + node.Width;
+            if (totalConnectors > 1)
+            {
+                y = node.Y + ((typeIndex + 1) * (node.Height / (totalConnectors + 1)));
+            }
+            return (x, y);
+        }
+    }
+
+    private string GetBezierPath((double X, double Y) start, (double X, double Y) end)
+    {
+        var dx = Math.Abs(end.X - start.X);
+        var controlPointOffset = Math.Max(dx * 0.5, 50);
+
+        return $"M {start.X} {start.Y} C {start.X + controlPointOffset} {start.Y}, {end.X - controlPointOffset} {end.Y}, {end.X} {end.Y}";
+    }
+}

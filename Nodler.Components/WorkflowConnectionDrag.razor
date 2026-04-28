@@ -1,0 +1,77 @@
+@using Nodler.Components.Models
+
+@if (!string.IsNullOrEmpty(SourceNodeId) && !string.IsNullOrEmpty(SourceConnectorId))
+{
+    var sourceNode = Nodes.FirstOrDefault(n => n.Id == SourceNodeId);
+
+    if (sourceNode != null)
+    {
+        var sourceConnector = sourceNode.Connectors.FirstOrDefault(c => c.Id == SourceConnectorId);
+
+        if (sourceConnector != null)
+        {
+            var startPoint = GetConnectorPosition(sourceNode, sourceConnector);
+            var pathData = GetBezierPath(startPoint, (MousePosition.X, MousePosition.Y));
+
+            <svg class="workflow-connection-drag" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                <path d="@pathData" 
+                      stroke="#fbbf24" 
+                      stroke-width="2" 
+                      fill="none" 
+                      stroke-dasharray="5,5"
+                      stroke-linecap="round" />
+            </svg>
+        }
+    }
+}
+
+@code {
+    [Parameter]
+    public string? SourceNodeId { get; set; }
+
+    [Parameter]
+    public string? SourceConnectorId { get; set; }
+
+    [Parameter]
+    public (double X, double Y) MousePosition { get; set; }
+
+    [Parameter]
+    public List<WorkflowNode> Nodes { get; set; } = new();
+
+    private (double X, double Y) GetConnectorPosition(WorkflowNode node, NodeConnector connector)
+    {
+        var connectorIndex = node.Connectors.IndexOf(connector);
+        var totalConnectors = node.Connectors.Count(c => c.Type == connector.Type);
+        var typeConnectors = node.Connectors.Where(c => c.Type == connector.Type).ToList();
+        var typeIndex = typeConnectors.IndexOf(connector);
+
+        var y = node.Y + (node.Height / 2);
+
+        if (connector.Type == ConnectorType.Input)
+        {
+            var x = node.X;
+            if (totalConnectors > 1)
+            {
+                y = node.Y + ((typeIndex + 1) * (node.Height / (totalConnectors + 1)));
+            }
+            return (x, y);
+        }
+        else
+        {
+            var x = node.X + node.Width;
+            if (totalConnectors > 1)
+            {
+                y = node.Y + ((typeIndex + 1) * (node.Height / (totalConnectors + 1)));
+            }
+            return (x, y);
+        }
+    }
+
+    private string GetBezierPath((double X, double Y) start, (double X, double Y) end)
+    {
+        var dx = Math.Abs(end.X - start.X);
+        var controlPointOffset = Math.Max(dx * 0.5, 50);
+
+        return $"M {start.X} {start.Y} C {start.X + controlPointOffset} {start.Y}, {end.X - controlPointOffset} {end.Y}, {end.X} {end.Y}";
+    }
+}

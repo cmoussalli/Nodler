@@ -1,0 +1,322 @@
+@page "/"
+@using Nodler.Components.Models
+@inject IJSRuntime JS
+@layout Nodler.Demo.Layout.EmptyLayout
+
+<PageTitle>Nodler - Workflow Designer</PageTitle>
+
+<div class="app-container @ThemeClass">
+    <WorkflowDesigner State="workflowState" NodeTypes="nodeTypes" NodeClicked="HandleNodeClicked"
+                      CanvasChanged="HandleCanvasChanged" ConnectorClicked="HandleConnectorClicked"
+                      SelectionChanged="HandleSelectionChanged" @bind-Theme="currentTheme" PaletteTitle="Title here"
+                      ShowThemeToggle="false">
+        <PaletteNodeTemplate Context="nt">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="width:10px; height:10px; border-radius:50%;
+                background:@nt.Color; flex:0 0 auto;"></span>
+                <div style="display:flex; flex-direction:column; min-width:0;">
+                    <strong>
+                        @if (!string.IsNullOrEmpty(nt.Icon))
+                        {
+                            <span style="margin-right:4px;">@nt.Icon</span>
+                        }
+                        @nt.Title
+                    </strong>
+                    @if (!string.IsNullOrEmpty(nt.Description))
+                    {
+                        <small style="opacity:0.7;">@nt.Description</small>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(nt.Badge))
+                {
+                    <span style="margin-left:auto; font-size:10px; padding:1px 6px;
+                    border-radius:999px; background:rgba(0,0,0,0.25);">@nt.Badge</span>
+                }
+            </div>
+        </PaletteNodeTemplate>
+    </WorkflowDesigner>
+
+    <aside class="node-info-panel">
+        <h3>Node Info</h3>
+        @if (workflowState.SelectedNode is { } node)
+        {
+            <div class="node-info-grid">
+                <div class="node-info-row">
+                    <label for="node-title-input">Title</label>
+                    <input id="node-title-input" type="text" value="@node.Title"
+                           @oninput="e => UpdateTitle(node, e.Value?.ToString())" />
+                </div>
+                <div class="node-info-row">
+                    <label>Type</label>
+                    <span class="value">@node.Type</span>
+                </div>
+                <div class="node-info-row">
+                    <label>Id</label>
+                    <span class="value">@node.Id</span>
+                </div>
+                <div class="node-info-row">
+                    <label>Background</label>
+                    <div class="node-info-color-row">
+                        <input type="color" value="@node.BackgroundColor"
+                               @oninput="e => UpdateBackground(node, e.Value?.ToString())" />
+                        <input type="text" value="@node.BackgroundColor"
+                               @oninput="e => UpdateBackground(node, e.Value?.ToString())" />
+                    </div>
+                </div>
+                <div class="node-info-row">
+                    <label>Border Color</label>
+                    <div class="node-info-color-row">
+                        <input type="color" value="@NormalizeColor(node.BorderColor)"
+                               @oninput="e => UpdateBorder(node, e.Value?.ToString())" />
+                        <input type="text" value="@node.BorderColor"
+                               @oninput="e => UpdateBorder(node, e.Value?.ToString())" />
+                    </div>
+                </div>
+                <div class="node-info-row">
+                    <label>Position</label>
+                    <span class="value">X: @((int)node.X), Y: @((int)node.Y)</span>
+                </div>
+                <div class="node-info-row">
+                    <label>Size</label>
+                    <span class="value">@((int)node.Width) × @((int)node.Height)</span>
+                </div>
+                <div class="node-info-row">
+                    <label for="node-template-input">
+                        HTML Template
+                        <button type="button" class="node-info-link-button"
+                                @onclick="() => ResetTemplate(node)">reset</button>
+                    </label>
+                    <textarea id="node-template-input" rows="6"
+                              placeholder="Leave empty for default. Placeholders: {{Title}}, {{Type}}, {{Id}}, {{BackgroundColor}}, {{BorderColor}}"
+                              value="@node.Template" @oninput="e => UpdateTemplate(node, e.Value?.ToString())"></textarea>
+                    <div class="node-info-template-presets">
+                        <button type="button" @onclick="() => ApplyTemplate(node, BadgeTemplate)">Badge</button>
+                        <button type="button" @onclick="() => ApplyTemplate(node, CardTemplate)">Card</button>
+                        <button type="button" @onclick="() => ApplyTemplate(node, MetricTemplate)">Metric</button>
+                    </div>
+                </div>
+                <div class="node-info-row">
+                    <label>Connectors (@node.Connectors.Count)</label>
+                    @if (node.Connectors.Count == 0)
+                    {
+                        <span class="value">None</span>
+                    }
+                    else
+                    {
+                        <div class="node-info-connectors">
+                            @foreach (var c in node.Connectors)
+                            {
+                                <div class="node-info-connector">
+                                    <span class="node-info-connector-tag">@c.Type</span>
+                                    <span>@c.Label</span>
+                                    @if (!string.IsNullOrEmpty(c.DataType))
+                                    {
+                                        <span style="opacity:0.7;">(@c.DataType)</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="node-info-empty">Select a node to view its info.</p>
+        }
+
+        <div class="node-info-actions">
+            <button @onclick="ExportJson">Export with positions</button>
+            <button class="secondary" @onclick="ExportStructureJson">Export structure only</button>
+        </div>
+    </aside>
+</div>
+
+<div class="json-output @ShowJsonClass @ThemeClass">
+    <button @onclick="CloseJsonOutput">Close</button>
+    @JsonOutput
+</div>
+
+@code {
+    private WorkflowDesignerState workflowState = new();
+    private string? JsonOutput;
+    private string ShowJsonClass = string.Empty;
+    private string currentTheme = "dark";
+    private string ThemeClass => currentTheme == "light" ? "theme-light" : "theme-dark";
+
+    private List<NodeType> nodeTypes = new()
+    {
+        new() {
+            Title = "Start",
+            Type = "start",
+            Color = "#22c55e",
+            Icon = "▶",
+            Description = "Entry point of the workflow",
+            Category = "Flow",
+            Connectors = new() { new() { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
+        },
+        new() {
+            Title = "Process",
+            Type = "process",
+            Color = "#3b82f6",
+            Icon = "⚙",
+            Description = "Generic processing step",
+            Category = "Flow",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
+{ Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
+        },
+        new() {
+            Title = "Decision",
+            Type = "decision",
+            Color = "#eab308",
+            Icon = "?",
+            Description = "Branch on a boolean condition",
+            Category = "Flow",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
+{ Label = "Yes", Type = ConnectorType.Output, DataType = "bool", MaxConnections = 1 }, new() { Label = "No", Type =
+ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
+        },
+        new() {
+            Title = "API Call",
+            Type = "api",
+            Color = "#8b5cf6",
+            Icon = "🌐",
+            Description = "HTTP request to an external service",
+            Category = "Integration",
+            Badge = "BETA",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
+{ Label = "Response", Type = ConnectorType.Output, DataType = "json" } }
+        },
+        new() {
+            Title = "End",
+            Type = "end",
+            Color = "#ef4444",
+            Icon = "■",
+            Description = "Terminate the workflow",
+            Category = "Flow",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any" } }
+        },
+        new() {
+            Title = "Data Transform",
+            Type = "transform",
+            Color = "#06b6d4",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
+{ Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
+        },
+        new() {
+            Title = "Loop",
+            Type = "loop",
+            Color = "#f97316",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
+{ Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
+        },
+        new() {
+            Title = "Delay",
+            Type = "delay",
+            Color = "#64748b",
+            Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
+{ Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
+        }
+    };
+
+    private void ExportJson()
+    {
+        JsonOutput = workflowState.ToJson();
+        ShowJsonClass = "show";
+    }
+
+    private void ExportStructureJson()
+    {
+        JsonOutput = workflowState.ToJson(includePosition: false);
+        ShowJsonClass = "show";
+    }
+
+    private void CloseJsonOutput()
+    {
+        ShowJsonClass = string.Empty;
+    }
+
+    private async Task HandleNodeClicked(WorkflowNode node)
+    {
+        await JS.InvokeVoidAsync("console.log", $"[NodeClicked] Id={node.Id}, Title={node.Title}, Type={node.Type}");
+    }
+
+    private async Task HandleConnectorClicked(ConnectorClickedEventArgs e)
+    {
+        await JS.InvokeVoidAsync("console.log", $"[ConnectorClicked] Node={e.Node.Title}, Connector={e.Connector.Label} ({e.Connector.Type})");
+    }
+
+    private async Task HandleCanvasChanged(CanvasChangedEventArgs e)
+    {
+        var detail = e.Node != null
+            ? $"Node: Id={e.Node.Id}, Title={e.Node.Title}"
+            : e.Connection != null
+                ? $"Connection: {e.Connection.SourceNodeId} -> {e.Connection.TargetNodeId}"
+                : "";
+        await JS.InvokeVoidAsync("console.log", $"[CanvasChanged] {e.ChangeType} - {detail}");
+    }
+
+    private void HandleSelectionChanged(WorkflowNode? node)
+    {
+    }
+
+    private void UpdateTitle(WorkflowNode node, string? value)
+    {
+        node.Title = value ?? string.Empty;
+    }
+
+    private void UpdateBackground(WorkflowNode node, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            node.BackgroundColor = value;
+        }
+    }
+
+    private void UpdateBorder(WorkflowNode node, string? value)
+    {
+        node.BorderColor = string.IsNullOrWhiteSpace(value) ? "transparent" : value;
+    }
+
+    private void UpdateTemplate(WorkflowNode node, string? value)
+    {
+        node.Template = string.IsNullOrEmpty(value) ? null : value;
+    }
+
+    private void ResetTemplate(WorkflowNode node)
+    {
+        node.Template = null;
+    }
+
+    private void ApplyTemplate(WorkflowNode node, string template)
+    {
+        node.Template = template;
+    }
+
+    private const string BadgeTemplate =
+        "<div style=\"display:flex;align-items:center;justify-content:center;height:100%;\">" +
+        "<span style=\"padding:4px 10px;border-radius:999px;background:rgba(0,0,0,0.35);font-weight:600;\">{{Title}}</span>" +
+        "</div>";
+
+    private const string CardTemplate =
+        "<div style=\"display:flex;flex-direction:column;gap:4px;padding:6px;\">" +
+        "<strong style=\"font-size:13px;\">{{Title}}</strong>" +
+        "<small style=\"opacity:0.75;\">type: {{Type}}</small>" +
+        "<code style=\"font-size:10px;opacity:0.6;\">{{Id}}</code>" +
+        "</div>";
+
+    private const string MetricTemplate =
+        "<div style=\"display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;\">" +
+        "<div style=\"font-size:22px;font-weight:700;\">{{Title}}</div>" +
+        "<div style=\"font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.1em;\">{{Type}}</div>" +
+        "</div>";
+
+    private static string NormalizeColor(string? value)
+    {
+        if (!string.IsNullOrEmpty(value) && value.StartsWith('#') && (value.Length == 7 || value.Length == 4))
+        {
+            return value;
+        }
+        return "#000000";
+    }
+}

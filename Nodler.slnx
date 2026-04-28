@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Nodler.Components/Nodler.Components.csproj" />
+  <Project Path="Nodler.Demo/Nodler.Demo.csproj" />
+</Solution>
