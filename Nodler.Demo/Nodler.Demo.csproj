@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Nodler.Components\Nodler.Components.csproj" />
+    <ProjectReference Include="..\Nodler\Nodler.csproj" />
   </ItemGroup>
 
 </Project>

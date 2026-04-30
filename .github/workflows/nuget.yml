@@ -14,13 +14,13 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet clean
       - name: 'Restore packages'
-        run: dotnet restore Nodler.Components/Nodler.Components.csproj
+        run: dotnet restore Nodler/Nodler.csproj
       - name: 'Build project'
-        run: dotnet build Nodler.Components/Nodler.Components.csproj --no-restore
+        run: dotnet build Nodler/Nodler.csproj --no-restore
 
       
       - name: 'Pack project'
-        run: dotnet pack Nodler.Components/Nodler.Components.csproj --no-restore --no-build --configuration Debug --output output
+        run: dotnet pack Nodler/Nodler.csproj --no-restore --no-build --configuration Debug --output output
 
       - name: "Push package"
         run: dotnet nuget push output\*.nupkg -k ${{ secrets.NUGETKEY }} -s https://api.nuget.org/v3/index.json

@@ -1,4 +1,4 @@
-namespace Nodler.Components.Models;
+namespace Nodler;
 
 public class NodeConnector
 {

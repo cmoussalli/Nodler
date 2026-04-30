@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Nodler.Components.Models;
+namespace Nodler;
 
 public class WorkflowDesignerState
 {

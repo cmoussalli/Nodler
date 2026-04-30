@@ -1,6 +1,6 @@
 using Microsoft.JSInterop;
 
-namespace Nodler.Components;
+namespace Nodler;
 
 // This class provides an example of how JavaScript functionality can be wrapped
 // in a .NET class for easy consumption. The associated JavaScript module is
@@ -12,7 +12,7 @@ namespace Nodler.Components;
 public class ExampleJsInterop(IJSRuntime jsRuntime) : IAsyncDisposable
 {
     private readonly Lazy<Task<IJSObjectReference>> moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>(
-            "import", "./_content/Nodler.Components/exampleJsInterop.js").AsTask());
+            "import", "./_content/Nodler/exampleJsInterop.js").AsTask());
 
     public async ValueTask<string> Prompt(string message)
     {

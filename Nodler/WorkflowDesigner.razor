@@ -1,4 +1,3 @@
-@using Nodler.Components.Models
 @using System.Text.Json
 @using Microsoft.JSInterop
 @inject IJSRuntime JSRuntime
@@ -367,7 +366,7 @@
         if (droppedType != null)
         {
             var jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
-                "import", "./_content/Nodler.Components/WorkflowDesigner.razor.js");
+                "import", "./_content/Nodler/WorkflowDesigner.razor.js");
             var rect = await jsModule.InvokeAsync<BoundingRect>("getBoundingClientRect", CanvasRef);
 
             var node = new WorkflowNode

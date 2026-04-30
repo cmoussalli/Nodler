@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="Nodler.Components/Nodler.Components.csproj" />
   <Project Path="Nodler.Demo/Nodler.Demo.csproj" />
+  <Project Path="Nodler/Nodler.csproj" Id="63ad24b7-b9a8-452e-a124-79cee265585a" />
 </Solution>
