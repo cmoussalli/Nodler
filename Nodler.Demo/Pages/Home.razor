@@ -140,7 +140,7 @@
     private WorkflowDesignerState workflowState = new();
     private string? JsonOutput;
     private string ShowJsonClass = string.Empty;
-    private string currentTheme = "dark";
+    private string currentTheme = "light";
     private string ThemeClass => currentTheme == "light" ? "theme-light" : "theme-dark";
 
     private List<NodeType> nodeTypes = new()
@@ -182,6 +182,7 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Icon = "🌐",
             Description = "HTTP request to an external service",
             Category = "Integration",
+            Tags = new() { "External", "HTTP" },
             Badge = "BETA",
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Response", Type = ConnectorType.Output, DataType = "json" } }
@@ -199,6 +200,7 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Title = "Data Transform",
             Type = "transform",
             Color = "#06b6d4",
+            Tags = new() { "Data" },
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
         },
@@ -206,6 +208,7 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Title = "Loop",
             Type = "loop",
             Color = "#f97316",
+            Tags = new() { "Control" },
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
         },
@@ -213,6 +216,7 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Title = "Delay",
             Type = "delay",
             Color = "#64748b",
+            Tags = new() { "Control" },
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
         }

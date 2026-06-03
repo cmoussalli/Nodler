@@ -1,3 +1,4 @@
+@using System.Globalization
 @using System.Text.Json
 @using Microsoft.JSInterop
 @inject IJSRuntime JSRuntime
@@ -20,8 +21,52 @@
                 }
             </div>
         }
+        @if (ShowPaletteFilter)
+        {
+            <div class="palette-filter">
+                <input type="text"
+                       class="palette-filter-input"
+                       placeholder="@PaletteFilterPlaceholder"
+                       value="@FilterText"
+                       @oninput="OnFilterInput" />
+                @if (!string.IsNullOrEmpty(FilterText))
+                {
+                    <button type="button"
+                            class="palette-filter-clear"
+                            title="Clear filter"
+                            @onclick="ClearFilter">
+                        &times;
+                    </button>
+                }
+            </div>
+        }
+        @{
+            var paletteTags = PaletteTags;
+        }
+        @if (ShowPaletteTabs && paletteTags.Count > 0)
+        {
+            <div class="palette-tabs">
+                <button type="button"
+                        class="palette-tab @(SelectedTag is null ? "palette-tab-active" : "")"
+                        title="Show all nodes"
+                        @onclick="() => SelectTag(null)">
+                    @AllTabLabel
+                </button>
+                @foreach (var tag in paletteTags)
+                {
+                    <button type="button"
+                            class="palette-tab @(string.Equals(SelectedTag, tag, StringComparison.OrdinalIgnoreCase) ? "palette-tab-active" : "")"
+                            title="@tag"
+                            style="--tab-color: @TagColor(tag);"
+                            @onclick="() => SelectTag(tag)">
+                        <span class="palette-tab-dot"></span>
+                        @tag
+                    </button>
+                }
+            </div>
+        }
         <div class="node-palette">
-            @foreach (var nodeType in NodeTypes)
+            @foreach (var nodeType in FilteredNodeTypes)
             {
                 <div class="palette-node @nodeType.CssClass"
                      style="@BuildPaletteNodeStyle(nodeType)"
@@ -64,17 +109,28 @@
                     }
                 </div>
             }
+            @if (!FilteredNodeTypes.Any())
+            {
+                <div class="palette-empty">No matching nodes</div>
+            }
         </div>
     </div>
 
-    <div class="workflow-canvas-container" @ref="CanvasRef">
-        <div class="workflow-canvas" 
+    <div class="workflow-canvas-container @CanvasCursorClass" @ref="CanvasRef"
+         style="@GridStyle"
+         @onwheel="OnWheel"
+         @onwheel:preventDefault
+         @onmouseenter="RefreshRectAsync">
+        <div class="workflow-canvas"
+             style="transform: translate(@Px(_panX), @Px(_panY)) scale(@Num(_scale)); transform-origin: 0 0;"
+             @onmousedown="OnCanvasMouseDown"
              @ondrop="OnDrop"
              @ondrop:preventDefault
              @ondragover="OnDragOver"
              @ondragover:preventDefault
              @onmousemove="OnMouseMove"
              @onmouseup="OnMouseUp"
+             @onmouseleave="OnMouseUp"
              @onclick="OnCanvasClick"
              @ondragenter="OnDragEnter">
             @foreach (var node in State.Nodes)
@@ -101,6 +157,20 @@
                     MousePosition="CurrentMousePosition"
                     Nodes="State.Nodes" />
             }
+        </div>
+
+        <div class="canvas-controls">
+            <button type="button"
+                    class="canvas-control-btn @(_handToolActive ? "active" : "")"
+                    title="Hand tool — drag to pan the canvas"
+                    @onclick="ToggleHandTool">&#9995;</button>
+            <button type="button" class="canvas-control-btn" title="Zoom in (Ctrl + scroll)"
+                    @onclick="() => ZoomBy(1.2)">+</button>
+            <button type="button" class="canvas-control-btn" title="Zoom out (Ctrl + scroll)"
+                    @onclick="() => ZoomBy(1.0 / 1.2)">&minus;</button>
+            <button type="button" class="canvas-control-btn" title="Reset view"
+                    @onclick="ResetView">&#8962;</button>
+            <span class="canvas-zoom-label">@(((int)Math.Round(_scale * 100)))%</span>
         </div>
     </div>
 </div>
@@ -174,6 +244,114 @@
 
     .theme-toggle:hover {
         border-color: #60a5fa;
+    }
+
+    .palette-filter {
+        position: relative;
+        margin-bottom: 12px;
+    }
+
+    .palette-filter-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 6px 28px 6px 10px;
+        font-size: 13px;
+        color: var(--nd-text);
+        background-color: var(--nd-input-bg);
+        border: 1px solid var(--nd-border);
+        border-radius: 4px;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .palette-filter-input:focus {
+        border-color: #60a5fa;
+    }
+
+    .palette-filter-input::placeholder {
+        color: var(--nd-text-muted);
+    }
+
+    .palette-filter-clear {
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        font-size: 16px;
+        line-height: 1;
+        color: var(--nd-text-muted);
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: color 0.2s, background-color 0.2s;
+    }
+
+    .palette-filter-clear:hover {
+        color: var(--nd-text);
+        background-color: var(--nd-border);
+    }
+
+    .palette-empty {
+        font-size: 12px;
+        color: var(--nd-text-muted);
+        text-align: center;
+        padding: 12px 0;
+    }
+
+    .palette-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 12px;
+    }
+
+    .palette-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+        color: var(--nd-text-muted);
+        background-color: var(--nd-input-bg);
+        border: 1px solid var(--nd-border);
+        border-radius: 999px;
+        cursor: pointer;
+        transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+    }
+
+    .palette-tab:hover {
+        color: var(--nd-text);
+        border-color: var(--tab-color, #60a5fa);
+    }
+
+    .palette-tab-active {
+        color: #ffffff;
+        background-color: var(--tab-color, #3b82f6);
+        border-color: var(--tab-color, #3b82f6);
+    }
+
+    .palette-tab-dot {
+        flex: 0 0 auto;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background-color: var(--tab-color, #94a3b8);
+    }
+
+    .palette-tab-active .palette-tab-dot {
+        background-color: #ffffff;
     }
 
     .node-palette {
@@ -265,6 +443,70 @@
         height: 100%;
         min-width: 3000px;
         min-height: 3000px;
+        will-change: transform;
+    }
+
+    /* Panning cursors */
+    .workflow-canvas-container.hand-tool .workflow-canvas,
+    .workflow-canvas-container.hand-tool .workflow-node {
+        cursor: grab;
+    }
+
+    .workflow-canvas-container.is-panning,
+    .workflow-canvas-container.is-panning .workflow-canvas,
+    .workflow-canvas-container.is-panning .workflow-node {
+        cursor: grabbing;
+    }
+
+    /* Zoom / pan controls overlay */
+    .canvas-controls {
+        position: absolute;
+        bottom: 16px;
+        right: 16px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px;
+        background-color: var(--nd-panel-bg);
+        border: 1px solid var(--nd-border);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px var(--nd-shadow);
+        z-index: 10;
+    }
+
+    .canvas-control-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        font-size: 15px;
+        line-height: 1;
+        color: var(--nd-text);
+        background-color: var(--nd-palette-bg);
+        border: 1px solid var(--nd-border);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+
+    .canvas-control-btn:hover {
+        border-color: #60a5fa;
+    }
+
+    .canvas-control-btn.active {
+        border-color: #60a5fa;
+        background-color: rgba(96, 165, 250, 0.18);
+    }
+
+    .canvas-zoom-label {
+        min-width: 44px;
+        text-align: center;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        color: var(--nd-text-muted);
+        user-select: none;
     }
 
 </style>
@@ -308,6 +550,32 @@
     public bool ShowThemeToggle { get; set; } = true;
 
     /// <summary>
+    /// Whether to show the text filter input above the node palette.
+    /// </summary>
+    [Parameter]
+    public bool ShowPaletteFilter { get; set; } = true;
+
+    /// <summary>
+    /// Placeholder text shown in the palette filter input when it is empty.
+    /// </summary>
+    [Parameter]
+    public string PaletteFilterPlaceholder { get; set; } = "Filter nodes...";
+
+    /// <summary>
+    /// Whether to show the category filter tabs above the node palette. Tabs are built
+    /// from the distinct set of each node's <see cref="NodeType.Category"/>. Tags are
+    /// search-only and do not generate tabs.
+    /// </summary>
+    [Parameter]
+    public bool ShowPaletteTabs { get; set; } = true;
+
+    /// <summary>
+    /// Label for the tab that clears the tag filter and shows every node.
+    /// </summary>
+    [Parameter]
+    public string AllTabLabel { get; set; } = "All";
+
+    /// <summary>
     /// Optional template for rendering the inside of each card in the left node palette.
     /// When provided, replaces the default chip layout. The outer draggable container is
     /// still owned by <c>WorkflowDesigner</c>, so drag-and-drop continues to work without
@@ -315,6 +583,81 @@
     /// </summary>
     [Parameter]
     public RenderFragment<NodeType>? PaletteNodeTemplate { get; set; }
+
+    private string FilterText { get; set; } = string.Empty;
+
+    // null = no category filter ("All"); otherwise only nodes in this category are shown.
+    private string? SelectedTag { get; set; }
+
+    // The distinct set of categories across the palette, sorted — drives the tab row.
+    private List<string> PaletteTags => NodeTypes
+        .Select(nt => nt.Category)
+        .Where(c => !string.IsNullOrWhiteSpace(c))
+        .Select(c => c!)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    private IEnumerable<NodeType> FilteredNodeTypes
+    {
+        get
+        {
+            IEnumerable<NodeType> result = NodeTypes;
+
+            // Tab selection filters by category only.
+            if (!string.IsNullOrEmpty(SelectedTag))
+            {
+                result = result.Where(nt =>
+                    string.Equals(nt.Category, SelectedTag, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Text search covers title, type, description, category, and tags.
+            if (!string.IsNullOrWhiteSpace(FilterText))
+            {
+                var term = FilterText.Trim();
+                result = result.Where(nt =>
+                    (nt.Title?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (nt.Type?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (nt.Description?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (nt.Category?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (nt.Tags?.Any(tag => tag.Contains(term, StringComparison.OrdinalIgnoreCase)) ?? false));
+            }
+
+            return result;
+        }
+    }
+
+    private void OnFilterInput(ChangeEventArgs e)
+    {
+        FilterText = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void ClearFilter()
+    {
+        FilterText = string.Empty;
+    }
+
+    private void SelectTag(string? tag)
+    {
+        SelectedTag = tag;
+    }
+
+    // Stable, theme-independent color for a tag so its tab/dot stay consistent.
+    private static readonly string[] TabPalette =
+    {
+        "#3b82f6", "#22c55e", "#8b5cf6", "#ef4444", "#06b6d4",
+        "#f59e0b", "#ec4899", "#14b8a6", "#a855f7", "#84cc16"
+    };
+
+    private static string TagColor(string tag)
+    {
+        int hash = 0;
+        foreach (var c in tag)
+        {
+            hash = unchecked(hash * 31 + c);
+        }
+        return TabPalette[Math.Abs(hash % TabPalette.Length)];
+    }
 
     private static string BuildPaletteNodeStyle(NodeType nt)
     {
@@ -338,7 +681,141 @@
     private (double X, double Y) CurrentMousePosition;
     private NodeType? DraggedNodeType;
 
+    // Pan / zoom view state. The canvas content is transformed by translate(_panX,_panY) scale(_scale).
+    private double _scale = 1.0;
+    private double _panX;
+    private double _panY;
+    private bool _handToolActive;
+    private bool _isPanning;
+    private (double X, double Y) _panStartClient;
+    private BoundingRect? _containerRect;
+    private IJSObjectReference? _module;
+
+    private const double MinScale = 0.2;
+    private const double MaxScale = 3.0;
+
+    private string CanvasCursorClass => _isPanning ? "is-panning" : (_handToolActive ? "hand-tool" : string.Empty);
+
+    private string GridStyle =>
+        $"background-position: {Px(_panX)} {Px(_panY)}; background-size: {Px(20 * _scale)} {Px(20 * _scale)};";
+
+    private static string Px(double v) => v.ToString("0.###", CultureInfo.InvariantCulture) + "px";
+    private static string Num(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+
     private bool IsDraggingConnection => !string.IsNullOrEmpty(State.SelectedConnectorNodeId) && !string.IsNullOrEmpty(State.SelectedConnectorId);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await EnsureModuleAsync();
+            await RefreshRectAsync();
+        }
+    }
+
+    private async Task<IJSObjectReference> EnsureModuleAsync()
+    {
+        _module ??= await JSRuntime.InvokeAsync<IJSObjectReference>(
+            "import", "./_content/Nodler/WorkflowDesigner.razor.js");
+        return _module;
+    }
+
+    private async Task RefreshRectAsync()
+    {
+        var module = await EnsureModuleAsync();
+        _containerRect = await module.InvokeAsync<BoundingRect>("getBoundingClientRect", CanvasRef);
+    }
+
+    /// <summary>Converts viewport (client) coordinates into canvas-content coordinates.</summary>
+    private (double X, double Y) ToCanvas(double clientX, double clientY)
+    {
+        var rect = _containerRect;
+        if (rect is null)
+        {
+            return (clientX, clientY);
+        }
+        return ((clientX - rect.X - _panX) / _scale, (clientY - rect.Y - _panY) / _scale);
+    }
+
+    private void OnWheel(WheelEventArgs e)
+    {
+        if (e.CtrlKey)
+        {
+            ZoomAt(e.DeltaY < 0 ? 1.1 : 1.0 / 1.1, e.ClientX, e.ClientY);
+        }
+        else if (e.ShiftKey)
+        {
+            // Hold Shift to scroll horizontally with a vertical wheel.
+            _panX -= e.DeltaY + e.DeltaX;
+        }
+        else
+        {
+            _panX -= e.DeltaX;
+            _panY -= e.DeltaY;
+        }
+    }
+
+    private void ZoomAt(double factor, double clientX, double clientY)
+    {
+        var rect = _containerRect;
+        if (rect is null)
+        {
+            _scale = Math.Clamp(_scale * factor, MinScale, MaxScale);
+            return;
+        }
+
+        var newScale = Math.Clamp(_scale * factor, MinScale, MaxScale);
+        if (Math.Abs(newScale - _scale) < 1e-6)
+        {
+            return;
+        }
+
+        // Keep the canvas point under the cursor fixed while zooming.
+        var vx = clientX - rect.X;
+        var vy = clientY - rect.Y;
+        _panX = vx - (vx - _panX) * (newScale / _scale);
+        _panY = vy - (vy - _panY) * (newScale / _scale);
+        _scale = newScale;
+    }
+
+    private void ZoomBy(double factor)
+    {
+        var rect = _containerRect;
+        if (rect is null)
+        {
+            _scale = Math.Clamp(_scale * factor, MinScale, MaxScale);
+            return;
+        }
+        ZoomAt(factor, rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
+    }
+
+    private void ResetView()
+    {
+        _scale = 1.0;
+        _panX = 0;
+        _panY = 0;
+    }
+
+    private void ToggleHandTool()
+    {
+        _handToolActive = !_handToolActive;
+    }
+
+    private void OnCanvasMouseDown(MouseEventArgs e)
+    {
+        // Empty-canvas mousedown reaches here (node mousedown stops propagation).
+        // Left or middle button starts a pan.
+        if (e.Button == 0 || e.Button == 1)
+        {
+            BeginPan(e);
+        }
+    }
+
+    private void BeginPan(MouseEventArgs e)
+    {
+        _isPanning = true;
+        _panStartClient = (e.ClientX, e.ClientY);
+    }
 
     private void OnPaletteDragStart(DragEventArgs e, NodeType nodeType)
     {
@@ -365,17 +842,16 @@
 
         if (droppedType != null)
         {
-            var jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
-                "import", "./_content/Nodler/WorkflowDesigner.razor.js");
-            var rect = await jsModule.InvokeAsync<BoundingRect>("getBoundingClientRect", CanvasRef);
+            await RefreshRectAsync();
+            var (dropX, dropY) = ToCanvas(e.ClientX, e.ClientY);
 
             var node = new WorkflowNode
             {
                 Title = droppedType.Title,
                 Type = droppedType.Type,
                 BackgroundColor = droppedType.Color,
-                X = e.ClientX - rect.X - 100,
-                Y = e.ClientY - rect.Y - 50,
+                X = dropX - 100,
+                Y = dropY - 50,
                 Connectors = droppedType.Connectors.Select(c => new NodeConnector
                 {
                     Label = c.Label,
@@ -403,16 +879,25 @@
 
     private void OnMouseMove(MouseEventArgs e)
     {
-        CurrentMousePosition = (e.ClientX, e.ClientY);
-        
+        if (_isPanning)
+        {
+            _panX += e.ClientX - _panStartClient.X;
+            _panY += e.ClientY - _panStartClient.Y;
+            _panStartClient = (e.ClientX, e.ClientY);
+            return;
+        }
+
+        CurrentMousePosition = ToCanvas(e.ClientX, e.ClientY);
+
         if (DraggingNode != null)
         {
-            var deltaX = e.ClientX - DragStartMouse.StartX;
-            var deltaY = e.ClientY - DragStartMouse.StartY;
-            
+            // Client-space deltas map to canvas-space movement by dividing out the zoom factor.
+            var deltaX = (e.ClientX - DragStartMouse.StartX) / _scale;
+            var deltaY = (e.ClientY - DragStartMouse.StartY) / _scale;
+
             DraggingNode.X += deltaX;
             DraggingNode.Y += deltaY;
-            
+
             DragStartMouse = (e.ClientX, e.ClientY);
             StateHasChanged();
         }
@@ -433,6 +918,13 @@
 
     private void OnNodeDragStart(WorkflowNode node, MouseEventArgs e)
     {
+        // With the hand tool active (or middle button), dragging a node pans instead of moving it.
+        if (_handToolActive || e.Button == 1)
+        {
+            BeginPan(e);
+            return;
+        }
+
         DraggingNode = node;
         DragStartMouse = (e.ClientX, e.ClientY);
     }
@@ -443,6 +935,12 @@
 
     private async Task OnMouseUp(MouseEventArgs e)
     {
+        if (_isPanning)
+        {
+            _isPanning = false;
+            return;
+        }
+
         if (DraggingNode != null)
         {
             await CanvasChanged.InvokeAsync(new CanvasChangedEventArgs
