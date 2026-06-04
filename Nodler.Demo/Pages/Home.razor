@@ -8,7 +8,8 @@
     <WorkflowDesigner State="workflowState" NodeTypes="nodeTypes" NodeClicked="HandleNodeClicked"
                       CanvasChanged="HandleCanvasChanged" ConnectorClicked="HandleConnectorClicked"
                       SelectionChanged="HandleSelectionChanged" @bind-Theme="currentTheme" PaletteTitle="Title here"
-                      ShowThemeToggle="false">
+                      ShowThemeToggle="false"
+                      FilterButtons="FilterButtonMode.Manual" FiltersButtonsConfigs="filterButtons">
         <PaletteNodeTemplate Context="nt">
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="width:10px; height:10px; border-radius:50%;
@@ -200,6 +201,7 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Title = "Data Transform",
             Type = "transform",
             Color = "#06b6d4",
+            Category = "Data",
             Tags = new() { "Data" },
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
@@ -208,6 +210,7 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Title = "Loop",
             Type = "loop",
             Color = "#f97316",
+            Category = "Control",
             Tags = new() { "Control" },
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
@@ -216,10 +219,20 @@ ConnectorType.Output, DataType = "bool", MaxConnections = 1 } }
             Title = "Delay",
             Type = "delay",
             Color = "#64748b",
+            Category = "Control",
             Tags = new() { "Control" },
             Connectors = new() { new() { Label = "Input", Type = ConnectorType.Input, DataType = "any", MaxConnections = 1 }, new()
 { Label = "Output", Type = ConnectorType.Output, DataType = "any" } }
         }
+    };
+
+    // Manual filter buttons: explicit label + color per button. The "Utilities" button
+    // demonstrates grouping multiple node categories (Data + Control) under one tab.
+    private List<FilterButton> filterButtons = new()
+    {
+        new() { Text = "Flow",        Color = "#22c55e", Categories = new() { "Flow" } },
+        new() { Text = "Integrations", Color = "#8b5cf6", Categories = new() { "Integration" } },
+        new() { Text = "Utilities",   Color = "#06b6d4", Categories = new() { "Data", "Control" } }
     };
 
     private void ExportJson()

@@ -41,26 +41,26 @@
             </div>
         }
         @{
-            var paletteTags = PaletteTags;
+            var paletteTabs = PaletteTabs;
         }
-        @if (ShowPaletteTabs && paletteTags.Count > 0)
+        @if (ShowPaletteTabs && paletteTabs.Count > 0)
         {
             <div class="palette-tabs">
                 <button type="button"
-                        class="palette-tab @(SelectedTag is null ? "palette-tab-active" : "")"
+                        class="palette-tab @(SelectedTab is null ? "palette-tab-active" : "")"
                         title="Show all nodes"
-                        @onclick="() => SelectTag(null)">
+                        @onclick="() => SelectTab(null)">
                     @AllTabLabel
                 </button>
-                @foreach (var tag in paletteTags)
+                @foreach (var tab in paletteTabs)
                 {
                     <button type="button"
-                            class="palette-tab @(string.Equals(SelectedTag, tag, StringComparison.OrdinalIgnoreCase) ? "palette-tab-active" : "")"
-                            title="@tag"
-                            style="--tab-color: @TagColor(tag);"
-                            @onclick="() => SelectTag(tag)">
+                            class="palette-tab @(SelectedTab is not null && string.Equals(SelectedTab.Key, tab.Key, StringComparison.Ordinal) ? "palette-tab-active" : "")"
+                            title="@tab.Label"
+                            style="--tab-color: @tab.Color;"
+                            @onclick="() => SelectTab(tab)">
                         <span class="palette-tab-dot"></span>
-                        @tag
+                        @tab.Label
                     </button>
                 }
             </div>
@@ -570,6 +570,23 @@
     public bool ShowPaletteTabs { get; set; } = true;
 
     /// <summary>
+    /// Controls how the palette filter tabs are built and colored.
+    /// <see cref="FilterButtonMode.Auto"/> (default) generates one tab per node category and
+    /// colors it from that category's first node. <see cref="FilterButtonMode.Manual"/> builds
+    /// the tabs from <see cref="FiltersButtonsConfigs"/> instead.
+    /// </summary>
+    [Parameter]
+    public FilterButtonMode FilterButtons { get; set; } = FilterButtonMode.Auto;
+
+    /// <summary>
+    /// User-defined filter buttons used when <see cref="FilterButtons"/> is
+    /// <see cref="FilterButtonMode.Manual"/>. Each entry maps a label and color to one or more
+    /// node categories. Nodes whose category is not covered by any button stay visible under "All".
+    /// </summary>
+    [Parameter]
+    public List<FilterButton> FiltersButtonsConfigs { get; set; } = new();
+
+    /// <summary>
     /// Label for the tab that clears the tag filter and shows every node.
     /// </summary>
     [Parameter]
@@ -586,17 +603,46 @@
 
     private string FilterText { get; set; } = string.Empty;
 
-    // null = no category filter ("All"); otherwise only nodes in this category are shown.
-    private string? SelectedTag { get; set; }
+    // null = no category filter ("All"); otherwise only nodes in the selected tab's categories show.
+    private PaletteTab? SelectedTab { get; set; }
 
-    // The distinct set of categories across the palette, sorted — drives the tab row.
-    private List<string> PaletteTags => NodeTypes
-        .Select(nt => nt.Category)
-        .Where(c => !string.IsNullOrWhiteSpace(c))
-        .Select(c => c!)
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
-        .ToList();
+    // A filter tab: a label/color plus the set of node categories it filters by.
+    private record PaletteTab(string Key, string Label, string Color, List<string> Categories);
+
+    // Builds the tab row from either the node categories (Auto) or the user configs (Manual).
+    private List<PaletteTab> PaletteTabs
+    {
+        get
+        {
+            if (FilterButtons == FilterButtonMode.Manual)
+            {
+                return FiltersButtonsConfigs
+                    .Select((cfg, i) => new PaletteTab(
+                        Key: $"{i}:{cfg.Text}",
+                        Label: cfg.Text,
+                        Color: string.IsNullOrWhiteSpace(cfg.Color) ? TagColor(cfg.Text) : cfg.Color!,
+                        Categories: cfg.Categories ?? new List<string>()))
+                    .ToList();
+            }
+
+            // Auto: one tab per distinct category, colored from that category's first node.
+            return NodeTypes
+                .Select(nt => nt.Category)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+                .Select(category =>
+                {
+                    var firstColor = NodeTypes
+                        .FirstOrDefault(nt => string.Equals(nt.Category, category, StringComparison.OrdinalIgnoreCase))
+                        ?.Color;
+                    var color = string.IsNullOrWhiteSpace(firstColor) ? TagColor(category) : firstColor!;
+                    return new PaletteTab(category, category, color, new List<string> { category });
+                })
+                .ToList();
+        }
+    }
 
     private IEnumerable<NodeType> FilteredNodeTypes
     {
@@ -604,11 +650,13 @@
         {
             IEnumerable<NodeType> result = NodeTypes;
 
-            // Tab selection filters by category only.
-            if (!string.IsNullOrEmpty(SelectedTag))
+            // Tab selection filters to nodes in any of the selected tab's categories.
+            if (SelectedTab is not null)
             {
                 result = result.Where(nt =>
-                    string.Equals(nt.Category, SelectedTag, StringComparison.OrdinalIgnoreCase));
+                    nt.Category is not null &&
+                    SelectedTab.Categories.Any(c =>
+                        string.Equals(c, nt.Category, StringComparison.OrdinalIgnoreCase)));
             }
 
             // Text search covers title, type, description, category, and tags.
@@ -637,9 +685,9 @@
         FilterText = string.Empty;
     }
 
-    private void SelectTag(string? tag)
+    private void SelectTab(PaletteTab? tab)
     {
-        SelectedTag = tag;
+        SelectedTab = tab;
     }
 
     // Stable, theme-independent color for a tag so its tab/dot stay consistent.
