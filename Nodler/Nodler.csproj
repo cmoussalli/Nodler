@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <Title>Nodler</Title>
-    <Version>1.1.0</Version>
+    <Version>1.2.1</Version>
     <Authors>CMoussalli</Authors>
   </PropertyGroup>
 
