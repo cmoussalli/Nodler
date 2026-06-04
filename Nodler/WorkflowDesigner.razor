@@ -576,7 +576,7 @@
     /// the tabs from <see cref="FiltersButtonsConfigs"/> instead.
     /// </summary>
     [Parameter]
-    public FilterButtonMode FilterButtons { get; set; } = FilterButtonMode.Auto;
+    public FilterButtonsMode FilterButtonsMode { get; set; } = FilterButtonsMode.Auto;
 
     /// <summary>
     /// User-defined filter buttons used when <see cref="FilterButtons"/> is
@@ -584,7 +584,7 @@
     /// node categories. Nodes whose category is not covered by any button stay visible under "All".
     /// </summary>
     [Parameter]
-    public List<FilterButton> FiltersButtonsConfigs { get; set; } = new();
+    public List<FilterButton> FiltersButtons { get; set; } = new();
 
     /// <summary>
     /// Label for the tab that clears the tag filter and shows every node.
@@ -614,9 +614,9 @@
     {
         get
         {
-            if (FilterButtons == FilterButtonMode.Manual)
+            if (FilterButtonsMode == FilterButtonsMode.Manual)
             {
-                return FiltersButtonsConfigs
+                return FiltersButtons
                     .Select((cfg, i) => new PaletteTab(
                         Key: $"{i}:{cfg.Text}",
                         Label: cfg.Text,

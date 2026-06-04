@@ -1,6 +1,6 @@
 namespace Nodler;
 
-public enum FilterButtonMode
+public enum FilterButtonsMode
 {
     /// <summary>Tabs are generated per category; color comes from each category's first node.</summary>
     Auto,
